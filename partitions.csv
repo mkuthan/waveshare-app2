@@ -1,0 +1,41 @@
+# Name,   Type, SubType,  Offset,   Size,     Flags
+#
+# Flash layout for the 32 MB NOR (GD25Q256) on the ESP32-P4-WiFi6-Touch-LCD-4.3.
+#
+# Below 0x9000 is not ours: the 2nd-stage bootloader is linked at 0x2000
+# (CONFIG_BOOTLOADER_OFFSET_IN_FLASH) and must end before the partition table binary
+# at 0x8000 (CONFIG_PARTITION_TABLE_OFFSET), so it has only 24 KB. It currently uses
+# ~22 KB of that, which is why its log level is capped in sdkconfig.defaults.
+#
+# No OTA: firmware is updated over USB (idf.py flash), not over the network. Nothing
+# in the app calls esp_ota_*, and neither CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE nor
+# CONFIG_APP_ROLLBACK_ENABLE is set. A single factory app therefore replaces the
+# previous factory + ota_0 + ota_1 trio, which frees 12 MB of flash and removes
+# otadata (8 KB) -- otadata only tells the bootloader which OTA slot to boot, so it
+# is meaningless without OTA slots. If OTA is ever added, use ota_0/ota_1 plus
+# otadata and drop factory: a factory image is frozen forever once an OTA has been
+# applied, and is only reachable again by USB re-flash.
+#
+# The remaining ~30 MB of flash is intentionally unpartitioned, not reserved for a
+# filesystem: bulk assets (images, audio, models) live on the TF card over SDIO 3.0,
+# which has neither the size limits nor the garbage-collection cost of SPIFFS.
+# Unallocated flash costs nothing, and a filesystem can be appended later without
+# moving any partition above it.
+#
+nvs,      data, nvs,      0x9000,   0x6000,
+#
+# RF calibration data. Kept because it is part of every IDF default layout and costs
+# 4 KB; dropping it only produces "phy_init partition not found" warnings.
+#
+phy_init, data, phy,      0xF000,   0x1000,
+#
+# App partitions must start on a 64 KB boundary, so 0x10000 cannot be used directly
+# after phy_init. The gap 0x10000-0x20000 is deliberate: it lets nvs or phy_init grow
+# without moving the app, which would invalidate every offset below.
+#
+# 2 MB for a currently ~1.2 MB image. The partition size is the only build-time guard
+# against the app silently growing past the slot, so it must stay above the real image
+# with room for the next feature. Growing it later is safe: the app is the last
+# partition, so its offset never changes and NVS survives a reflash.
+#
+factory,  app,  factory,  0x20000,  0x200000,
